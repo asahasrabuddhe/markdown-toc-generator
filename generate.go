@@ -9,9 +9,14 @@ import (
 )
 
 var (
-	hashedHeaderPattern      = regexp.MustCompile("^(?P<indent>#+) ?(?P<title>.+)$")
-	underscoreHeaderPattern1 = regexp.MustCompile("^=+$")
-	underscoreHeaderPattern2 = regexp.MustCompile("^\\--=$")
+	hashPatternHeader   = regexp.MustCompile("^(?P<indent>#+) ?(?P<title>.+)$")
+	underscorePatternH1 = regexp.MustCompile("^=+$")
+	underscorePatternH2 = regexp.MustCompile("^-+$")
+	bullet              = map[int]string{
+		0: "*",
+		1: "-",
+		2: "+",
+	}
 )
 
 func generateToc(input []byte, depth, skipHeaders int) ([]byte, error) {
@@ -23,21 +28,25 @@ func generateToc(input []byte, depth, skipHeaders int) ([]byte, error) {
 
 	var previousLine string
 	parsedHeaders := make(map[string]int)
+	indentDiff := skipHeaders
 	for scanner.Scan() {
 		switch {
-		case hashedHeaderPattern.Match(scanner.Bytes()):
-			matches := hashedHeaderPattern.FindStringSubmatch(scanner.Text())
+		case hashPatternHeader.Match(scanner.Bytes()):
+			matches := hashPatternHeader.FindStringSubmatch(scanner.Text())
 			if depth > 0 && len(matches[1]) > depth {
 				continue
 			}
-			appendToToc(&builder, matches[2], len(matches[1])-1, parsedHeaders, &skipHeaders)
-		case underscoreHeaderPattern1.Match(scanner.Bytes()):
+			if strings.Contains(previousLine, "`") {
+				continue
+			}
+			appendToToc(&builder, matches[2], len(matches[1])-1 - indentDiff, parsedHeaders, &skipHeaders)
+		case underscorePatternH1.Match(scanner.Bytes()):
 			appendToToc(&builder, previousLine, 0, parsedHeaders, &skipHeaders)
-		case underscoreHeaderPattern2.Match(scanner.Bytes()):
+		case underscorePatternH2.Match(scanner.Bytes()):
 			if depth > 0 && depth < 2 {
 				continue
 			}
-			appendToToc(&builder, previousLine, 1, parsedHeaders, &skipHeaders)
+			appendToToc(&builder, previousLine, 1 - indentDiff, parsedHeaders, &skipHeaders)
 		}
 
 		previousLine = scanner.Text()
@@ -67,7 +76,7 @@ func appendToToc(builder *bytes.Buffer, title string, indent int, parsedHeaders 
 		parsedHeaders[link] = 1
 	}
 
-	builder.WriteString(fmt.Sprintf("%s* [%s](#%s)\n", strings.Repeat("   ", indent), title, link))
+	builder.WriteString(fmt.Sprintf("%s%s [%s](#%s)\n", strings.Repeat("   ", indent), bullet[indent%len(bullet)], title, link))
 }
 
 func toSlug(str string) string {
@@ -98,5 +107,5 @@ func toSlug(str string) string {
 	out := replacer.Replace(str)
 	out = strings.Replace(out, " ", "-", -1)
 
-	return out
+	return strings.ToLower(out)
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/urfave/cli"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 )
@@ -25,7 +24,7 @@ func main() {
 			Value: "-",
 			Usage: "path to markdown file to write after table of contents has been generated or '-' to write to stdout",
 		},
-		cli.BoolTFlag{
+		cli.BoolFlag{
 			Name:  "output-complete-file, c",
 			Usage: "entire source file is written as output including the table of contents. if this flag is set to false, inline option is ignored",
 		},
@@ -44,58 +43,7 @@ func main() {
 		},
 	}
 
-	app.Action = func(context *cli.Context) error {
-		// parse options
-		source := context.String("source")
-		destination := context.String("destination")
-		outputCompleteFile := context.Bool("output-complete-file")
-		inline := context.Bool("inline")
-		depth := context.Int("max-depth")
-		skipHeaders := context.Int("skip-headers")
-
-		// get reader
-		reader, err := getSourceReader(source)
-		if err != nil {
-			return err
-		}
-		defer reader.Close()
-
-		// get source input
-		input, err := readFromSource(reader)
-		if err != nil {
-			return err
-		}
-
-		// generate toc
-		output, err := generateToc(input, depth, skipHeaders)
-		if err != nil {
-			return err
-		}
-
-		if outputCompleteFile {
-			// replace
-		}
-
-		// get writer
-		var writer io.WriteCloser
-		if inline {
-			writer, err = getSourceWriter(source)
-		} else {
-			writer, err = getSourceWriter(destination)
-		}
-		if err != nil {
-			return err
-		}
-		defer writer.Close()
-
-		// write output
-		err = writeToDestination(output, writer)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}
+	app.Action = action
 
 	err := app.Run(os.Args)
 	if err != nil {
@@ -103,27 +51,61 @@ func main() {
 	}
 }
 
-func getSourceReader(source string) (io.ReadCloser, error) {
-	if source == "-" {
-		return os.Stdin, nil
-	} else {
-		return os.Open(source)
+func action(context *cli.Context) error {
+	// parse options
+	source := context.String("source")
+	destination := context.String("destination")
+	outputCompleteFile := context.Bool("output-complete-file")
+	inline := context.Bool("inline")
+	depth := context.Int("max-depth")
+	skipHeaders := context.Int("skip-headers")
+
+	// get reader
+	reader, err := getSourceReader(source)
+	if err != nil {
+		return err
 	}
-}
 
-func getSourceWriter(destination string) (io.WriteCloser, error) {
-	if destination == "-" {
-		return os.Stdout, nil
-	} else {
-		return os.Open(destination)
+	// get source input
+	input, err := readFromSource(reader)
+	if err != nil {
+		return err
 	}
-}
+	err = reader.Close()
+	if err != nil {
+		return err
+	}
 
-func readFromSource(reader io.Reader) ([]byte, error) {
-	return ioutil.ReadAll(reader)
-}
+	// generate toc
+	output, err := generateToc(input, depth, skipHeaders)
+	if err != nil {
+		return err
+	}
 
-func writeToDestination(output []byte, writer io.Writer) error {
-	_, err := writer.Write(output)
-	return err
+	if outputCompleteFile {
+		output = replaceToc(input, output)
+	}
+
+	// get writer
+	var writer io.WriteCloser
+	if inline {
+		writer, err = getSourceWriter(source)
+	} else {
+		writer, err = getSourceWriter(destination)
+	}
+	if err != nil {
+		return err
+	}
+
+	// write output
+	err = writeToDestination(output, writer)
+	if err != nil {
+		return err
+	}
+	err = writer.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
